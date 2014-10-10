@@ -1,9 +1,8 @@
 ;;; todochiku.el --- A mode for interfacing with Growl, Snarl, and the like.
-(defconst todochiku-version "0.0.8")
-;; Version: 0.0.8
+(defconst todochiku-version "0.0.9")
 
 ;; Copyright (c)2008 Jonathan Arkell. (by)(nc)(sa)  Some rights reserved.
-;; Author: Jonathan Arkell <jonnay@jonnay.net>
+;; Author: Pan, Senshan <magichowl@163.com> Jonathan Arkell <jonnay@jonnay.net>
 
 ;; This file is not part of GNU Emacs.
 
@@ -98,6 +97,7 @@
 ;; - Build better backend support.
 
 ;;; CHANGELOG:
+;; v0.0.9 - Added inital sound support.
 ;; V0.0.8 - Fixed broken `todochiku-icons-directory' definition that made it impossible to change through Customize.
 ;; V0.0.7b - Added support for sticky messages for libnotify and growl.
 ;; V0.0.7  - Added YaOddMuse interface
@@ -160,8 +160,14 @@ Whether or not to display todochiku-messages as a tooltip."
   :group 'todochiku)
 
 (defcustom todochiku-icons-directory
-  "~/.emacs-cfg/todochiku-icons"
+  "./todochiku-icons"
   "Path to the todochiku icons directory."
+  :type 'directory
+  :group 'todochiku)
+
+(defcustom todochiku-sounds-directory
+  "./todochiku-sounds"
+  "Path to the todochiku sounds directory."
   :type 'directory
   :group 'todochiku)
 
@@ -194,6 +200,23 @@ they can depend on."
   :type '(alist)
   :group 'todochiku)
 
+(defcustom todochiku-sounds
+  '((default   . "announcements.ogg")
+	(alert     . "alert.ogg")
+	(bell      . "bell.ogg")
+	(compile   . "binary.ogg")
+        (start     . "start.ogg")
+        (success   . "Finish-Success.ogg")
+        (error   . "Finish-Error.ogg")
+	(mail      . "message.ogg")
+        )
+  "An alist containing a sound name, and a path to the sound.
+The OGG format seems to be most compatable.  This is done in
+an a-list so that elisp developers have a set of sounds that
+they can depend on."
+  :type '(alist)
+  :group 'todochiku)
+
 (defcustom todochiku-compile-message 't
   "Automatically add a hook to send a todochiku on compilation finsih."
   :type '(boolean))
@@ -218,7 +241,7 @@ This is really only useful if you use the appt package (i.e. from planner mode).
   :group 'todochiku)
 
 
-(defun todochiku-message (title message icon &optional sticky)
+(defun todochiku-message (title message icon sound &optional sticky)
   "Send a message via growl, snarl, etc.
 If you don't wnat to set a title or icon, just use an ampty string \"\"
 as an argument.
@@ -227,13 +250,16 @@ as an argument.
 you can use `todochiku-icon' to figure out which icon you want to display.
 
 See the variable `todochiku-icons' for a list of available icons." 
-  (if todochiku-debug (message "Sent todochiku message.  Title:%s Message:%30s... Icon:%s Sticky:%s" title message icon sticky))
+  (if todochiku-debug (message "Sent todochiku message.  Title:%s Message:%30s... Icon:%s Sound:&s Sticky:%s" title message icon sound sticky))
   (when (not (string= todochiku-command ""))
 		(apply 'start-process 
 			   "todochiku" 
 			   nil 
 			   todochiku-command 
-			   (todochiku-get-arguments title message icon sticky)))
+			   (todochiku-get-arguments title message icon sticky)
+                           )
+	  (shell-command (concat "paplay --volume=100000 " sound " 2> /dev/null"))
+		)
   (when todochiku-tooltip-too
 		(let ((tooltip-frame-parameters '((name . "todochiku")
 										  (internal-border-width . 4)
@@ -247,7 +273,11 @@ See the variable `todochiku-icons' for a list of available icons."
 
 (defun growl (title message)
   "Alias for `todochiku-message'."
-  (todochiku-message title message ""))
+  (todochiku-message title message "" ""))
+
+(defun growl-mail (title message)
+  "Alias for `todochiku-message'."
+  (todochiku-message title message (todochiku-icon 'mail) (todochiku-sound 'mail)))
 
 ;;*JasonMcBrayer backend
 (defun todochiku-get-arguments (title message icon sticky)
@@ -264,6 +294,10 @@ This would be better done through a customization probably."
   "Pull out an actual icon from the variable `todochiku-icons'."
   (expand-file-name (concat todochiku-icons-directory "/" (cdr (assoc icon todochiku-icons)))))
 
+(defun todochiku-sound (sound)
+  "Pull out an actual sound from the variable `todochiku-sounds'."
+  (expand-file-name (concat todochiku-sounds-directory "/" (cdr (assoc sound todochiku-sounds)))))
+
 (defun todochiku-in (message mins)
   "Send a todochiku message in a set ammount of time. Can take a prefix arg for the number of mins to wait."
   (interactive "sMessage: \nNTime to wait: ")
@@ -272,13 +306,15 @@ This would be better done through a customization probably."
 			   'todochiku-message
 			   "Todohiku Timer"
 			   message
-			   (todochiku-icon 'bell)))
+			   (todochiku-icon 'bell)
+                           (todochiku-sound 'bell)))
 
 (defun todochiku-appt-disp-window (min-to-app new-time appt-msg)
   "A helper function to interface with appt-disp-window-function."
   (todochiku-message (concat "Appt in " min-to-app)
 					 (concat appt-msg "\n" min-to-app " Mins\n" new-time)
-					 (todochiku-icon 'alarm))
+					 (todochiku-icon 'alarm)
+                                         (todochiku-sound 'bell))
   (if todochiku-display-appts-in-window-too
 	  (appt-disp-window min-to-app new-time appt-msg)))
 
@@ -289,8 +325,10 @@ This would be better done through a customization probably."
 (if todochiku-compile-message
 	(add-hook 'compilation-mode-hook
 			  (lambda ()
-				(add-to-list 'compilation-finish-functions
-							 (lambda (buf finish) (todochiku-message "Compilation Finished" finish (todochiku-icon 'compile)))))))
+                            (add-to-list 'compilation-finish-functions
+                                         (lambda (buf finish)
+                                           (todochiku-message "Compilation Finished" finish (todochiku-icon 'compile) (if (string= finish "finished\n") (todochiku-sound 'success) (todochiku-sound 'error)))
+                   )))))
 
 ;;* external
 (defun growl-rcirc-print-hook (process sender response target text)
@@ -307,9 +345,9 @@ This would be better done through a customization probably."
 ;;* external
 (defun yaoddmuse-todochiku (msg)
   "Hook into yaoddmuses notification system."
-  (todochiku-message "YaOddMuse" msg (todochiku-icon 'social)))
+  (todochiku-message "YaOddMuse" msg (todochiku-icon 'social) (todochiku-sound 'bell)))
 
-(todochiku-message "Emacs" "Todochiku (growl for emacs) is ready." (todochiku-icon 'check))
+(todochiku-message "Emacs" "Todochiku (growl for emacs) is ready." (todochiku-icon 'check) (todochiku-sound 'start))
 
 ;; This idea doesn't quite work, and given that message is a C function, it might not be that smart anyway
 ;; (defcustom todochiku-on-message nil
