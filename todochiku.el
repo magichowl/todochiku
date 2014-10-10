@@ -160,13 +160,13 @@ Whether or not to display todochiku-messages as a tooltip."
   :group 'todochiku)
 
 (defcustom todochiku-icons-directory
-  "./todochiku-icons"
+  (concat (file-name-directory (or load-file-name buffer-file-name)) "todochiku-icons")
   "Path to the todochiku icons directory."
   :type 'directory
   :group 'todochiku)
 
 (defcustom todochiku-sounds-directory
-  "./todochiku-sounds"
+  (concat (file-name-directory (or load-file-name buffer-file-name)) "todochiku-sounds")
   "Path to the todochiku sounds directory."
   :type 'directory
   :group 'todochiku)
